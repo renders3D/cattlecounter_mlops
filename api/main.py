@@ -43,6 +43,7 @@ async def submit_job(file: UploadFile = File(...)):
 
         return {
             "job_id": job_id,
+            "blob_name": blob_name,
             "status": "queued",
             "message": "Video uploaded successfully. Processing started."
         }
