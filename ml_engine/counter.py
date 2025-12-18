@@ -10,7 +10,6 @@ from core.config import settings
 class CowCounterEngine:
     def __init__(self):
         print("🧠 Loading AI Models...")
-        # Use MPS for Mac, CUDA for Nvidia, or CPU
         if torch.backends.mps.is_available():
             self.device = torch.device("mps")
         elif torch.cuda.is_available():
@@ -25,16 +24,13 @@ class CowCounterEngine:
         self.model.to(self.device)
         self.model.eval()
         
-        # COCO whitelist for "Top-Down Cows"
         self.allowed_labels = ['bird', 'sheep', 'cow', 'bear', 'dog', 'horse', 'zebra']
 
-    def process_video(self, source_path, target_path):
-        # 1. Get Video Info
+    # ADDED: progress_callback argument
+    def process_video(self, source_path, target_path, progress_callback=None):
         video_info = sv.VideoInfo.from_video_path(source_path)
         print(f"   [+] Video Resolution: {video_info.width}x{video_info.height}")
         
-        # 2. Initialize Logic
-        # NOTE: Updated arguments for supervision >= 0.20.0
         tracker = sv.ByteTrack(
             track_activation_threshold=0.25,
             lost_track_buffer=30,
@@ -47,23 +43,26 @@ class CowCounterEngine:
             end=sv.Point(video_info.width, video_info.height // 2)
         )
         
-        # Annotators
         box_annotator = sv.BoxAnnotator(thickness=2, color=sv.ColorPalette.DEFAULT)
         label_annotator = sv.LabelAnnotator(text_scale=0.5, text_padding=5)
         trace_annotator = sv.TraceAnnotator(thickness=2, trace_length=50)
         line_annotator = sv.LineZoneAnnotator(thickness=2, text_thickness=2, text_scale=1)
 
-        # 3. MANUAL PROCESSING LOOP (Stable on Mac M1/M2)
-        # Instead of sv.process_video, we control the loop to avoid threading deadlocks
-        
         frame_generator = sv.get_video_frames_generator(source_path)
         
         print("   [+] Starting Inference Loop...")
         
+        total_frames = video_info.total_frames
+        
         with sv.VideoSink(target_path, video_info=video_info) as sink:
-            # Wrap in tqdm for progress bar
-            for frame in tqdm(frame_generator, total=video_info.total_frames, unit="frame"):
+            for i, frame in enumerate(tqdm(frame_generator, total=total_frames, unit="frame")):
                 
+                # --- PROGRESS REPORTING ---
+                # Report every 5% or at least every 30 frames to avoid spamming Azure
+                if progress_callback and (i % 30 == 0):
+                    percent = round((i / total_frames) * 100)
+                    progress_callback(percent)
+
                 # A. Inference
                 img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
                 inputs = self.processor(images=img_pil, return_tensors="pt").to(self.device)
@@ -81,14 +80,14 @@ class CowCounterEngine:
 
                 # C. Filtering
                 valid_indices = []
-                for i, class_id in enumerate(detections.class_id):
+                for idx, class_id in enumerate(detections.class_id):
                     class_name = self.model.config.id2label[class_id]
                     if class_name in self.allowed_labels:
-                        valid_indices.append(i)
+                        valid_indices.append(idx)
                 
                 if valid_indices:
                     detections = detections[np.array(valid_indices)]
-                    detections = detections[detections.area > 4000] # Min Area
+                    detections = detections[detections.area > 4000] 
                 else:
                     detections = sv.Detections.empty()
 
@@ -104,10 +103,8 @@ class CowCounterEngine:
                 frame = label_annotator.annotate(frame, detections, labels)
                 frame = line_annotator.annotate(frame, line_counter=line_zone)
                 
-                # Write to file
                 sink.write_frame(frame)
 
-        # 4. Return Stats
         print("   [+] Processing Finished.")
         return {
             "total_in": int(line_zone.in_count),
