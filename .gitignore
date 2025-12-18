@@ -1,0 +1,48 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+dist/
+build/
+*.egg-info/
+
+# --- Virtual Environments ---
+venv/
+.venv/
+env/
+.venv/
+.env
+
+# --- IDEs & OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.qodo/
+
+# --- Media & Large Data ---
+*.mp4
+*.mov
+*.avi
+*.jpg
+*.png
+
+# --- AI Models ---
+*.pt
+*.pth
+*.bin
+*.tflite
+*.onnx
+
+# --- Azure & Secrets ---
+azure_credentials.json
+local.settings.json
+
+# --- Testing & Coverage ---
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- Docker ---
+docker-compose.override.yml

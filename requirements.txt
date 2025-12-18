@@ -1,0 +1,20 @@
+# --- Web API ---
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+pydantic-settings
+
+# --- Azure Cloud ---
+azure-storage-blob
+azure-storage-queue
+
+# --- AI & Vision ---
+torch
+torchvision
+transformers
+timm
+supervision
+opencv-python-headless
+pillow
+numpy
