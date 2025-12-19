@@ -8,7 +8,7 @@ on:
 
 env:
   RESOURCE_GROUP: 'CattleCounterRG'
-  REGION: 'eastus'
+  REGION: 'westeurope'  # <--- UPDATED to match existing Resource Group
 
 jobs:
   build-and-deploy:
@@ -72,7 +72,6 @@ jobs:
           --settings AZURE_STORAGE_CONNECTION_STRING="${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}"
 
     # 9. Deploy Worker to ACI
-    # FIX: Added --os-type Linux explicit definition
     - name: 'Deploy Worker to ACI'
       run: |
         az container create \
