@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+    - 'dashboard/**'      # Ignore changes in dashboard folder
+    - 'docs/**'           # Ignore changes in docs
+    - '**.md'             # Ignore changes in markdown files
+    - '.gitignore'        # Ignore changes in gitignore
   workflow_dispatch:
 
 env:
