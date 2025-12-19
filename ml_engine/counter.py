@@ -1,15 +1,19 @@
 import cv2
 import torch
 import supervision as sv
-from transformers import DetrImageProcessor, DetrForObjectDetection
+from transformers import DetrImageProcessor, DetrForObjectDetection, logging as transformers_logging
 from PIL import Image
 import numpy as np
 from tqdm import tqdm
 from core.config import settings
 
+# Silence Hugging Face warnings
+transformers_logging.set_verbosity_error()
+
 class CowCounterEngine:
     def __init__(self):
         print("🧠 Loading AI Models...")
+        
         if torch.backends.mps.is_available():
             self.device = torch.device("mps")
         elif torch.cuda.is_available():
@@ -19,18 +23,23 @@ class CowCounterEngine:
             
         print(f"   [+] Compute Device: {self.device}")
         
-        self.processor = DetrImageProcessor.from_pretrained(settings.MODEL_NAME)
-        self.model = DetrForObjectDetection.from_pretrained(settings.MODEL_NAME)
-        self.model.to(self.device)
-        self.model.eval()
+        try:
+            self.processor = DetrImageProcessor.from_pretrained(settings.MODEL_NAME)
+            self.model = DetrForObjectDetection.from_pretrained(settings.MODEL_NAME)
+            self.model.to(self.device)
+            self.model.eval()
+            print(f"   [+] ✅ Model '{settings.MODEL_NAME}' loaded successfully!")
+        except Exception as e:
+            print(f"   [!] ❌ CRITICAL: Failed to load model. Error: {e}")
+            raise e
         
         self.allowed_labels = ['bird', 'sheep', 'cow', 'bear', 'dog', 'horse', 'zebra']
 
-    # ADDED: progress_callback argument
     def process_video(self, source_path, target_path, progress_callback=None):
         video_info = sv.VideoInfo.from_video_path(source_path)
         print(f"   [+] Video Resolution: {video_info.width}x{video_info.height}")
         
+        # Initialize Tracker & Zone
         tracker = sv.ByteTrack(
             track_activation_threshold=0.25,
             lost_track_buffer=30,
@@ -43,6 +52,7 @@ class CowCounterEngine:
             end=sv.Point(video_info.width, video_info.height // 2)
         )
         
+        # Initialize Annotators
         box_annotator = sv.BoxAnnotator(thickness=2, color=sv.ColorPalette.DEFAULT)
         label_annotator = sv.LabelAnnotator(text_scale=0.5, text_padding=5)
         trace_annotator = sv.TraceAnnotator(thickness=2, trace_length=50)
@@ -57,13 +67,12 @@ class CowCounterEngine:
         with sv.VideoSink(target_path, video_info=video_info) as sink:
             for i, frame in enumerate(tqdm(frame_generator, total=total_frames, unit="frame")):
                 
-                # --- PROGRESS REPORTING ---
-                # Report every 5% or at least every 30 frames to avoid spamming Azure
+                # Progress Reporting
                 if progress_callback and (i % 30 == 0):
                     percent = round((i / total_frames) * 100)
                     progress_callback(percent)
 
-                # A. Inference
+                # Inference
                 img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
                 inputs = self.processor(images=img_pil, return_tensors="pt").to(self.device)
                 
@@ -75,10 +84,9 @@ class CowCounterEngine:
                     outputs, target_sizes=target_sizes, threshold=0.4
                 )[0]
 
-                # B. Parsing
                 detections = sv.Detections.from_transformers(transformers_results=results)
 
-                # C. Filtering
+                # Filtering Logic
                 valid_indices = []
                 for idx, class_id in enumerate(detections.class_id):
                     class_name = self.model.config.id2label[class_id]
@@ -91,11 +99,11 @@ class CowCounterEngine:
                 else:
                     detections = sv.Detections.empty()
 
-                # D. Tracking & Counting
+                # Update State
                 detections = tracker.update_with_detections(detections)
                 line_zone.trigger(detections=detections)
 
-                # E. Annotation
+                # Annotation
                 labels = [f"Cow #{id}" for id in detections.tracker_id]
                 
                 frame = trace_annotator.annotate(frame, detections)
