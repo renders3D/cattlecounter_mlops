@@ -4,3 +4,4 @@ azure-storage-blob
 python-dotenv
 pandas
 plotly
+requests-toolbelt

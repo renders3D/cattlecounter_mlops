@@ -6,120 +6,128 @@ import os
 import pandas as pd
 from azure.storage.blob import BlobServiceClient
 from dotenv import load_dotenv
+from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
 
 # --- CONFIGURATION ---
-# Load environment variables from the root .env file
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
-AZURE_CONNECTION_STRING = os.getenv("AZURE_CONNECTION_STRING")
-API_URL = "http://localhost:8000" # URL of FastAPI
+# UNIFIED VARIABLE NAME
+AZURE_STORAGE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+API_URL = "http://localhost:8000" 
 CONTAINER_OUTPUT = "processed-videos"
 
-# Page Config
-st.set_page_config(
-    page_title="CattleCounter Ops Center",
-    page_icon="🐮",
-    layout="wide"
-)
+st.set_page_config(page_title="CattleCounter Ops Center", page_icon="🐮", layout="wide")
 
-# --- AZURE CLIENT ---
+# --- UTILS ---
+class ProgressReader:
+    def __init__(self, file_obj, callback):
+        self.file = file_obj
+        self.callback = callback
+        self.total_size = file_obj.size
+        self.bytes_read = 0
+
+    def read(self, size=-1):
+        data = self.file.read(size)
+        if not data: return b""
+        self.bytes_read += len(data)
+        if self.total_size > 0: self.callback(self.bytes_read, self.total_size)
+        return data
+
 @st.cache_resource
 def get_blob_service():
-    if not AZURE_CONNECTION_STRING:
-        return None
-    return BlobServiceClient.from_connection_string(AZURE_CONNECTION_STRING)
+    if not AZURE_STORAGE_CONNECTION_STRING: return None
+    return BlobServiceClient.from_connection_string(AZURE_STORAGE_CONNECTION_STRING)
 
-def get_job_status(filename):
-    """
-    Reads the sidecar JSON file (filename_status.json) directly from Azure
-    to avoid spamming the API with polling requests.
-    """
+def get_job_status(blob_name):
     client = get_blob_service()
     if not client: return None
     
-    # The worker creates a file: video.mp4 -> video_status.json
-    status_filename = filename.replace(".mp4", "_status.json")
-    blob_client = client.get_blob_client(container=CONTAINER_OUTPUT, blob=status_filename)
+    base_name = os.path.splitext(blob_name)[0]
+    status_filename = f"{base_name}_status.json"
     
+    blob_client = client.get_blob_client(container=CONTAINER_OUTPUT, blob=status_filename)
     try:
         if blob_client.exists():
-            data = blob_client.download_blob().readall()
-            return json.loads(data)
-    except Exception as e:
-        pass
+            return json.loads(blob_client.download_blob().readall())
+    except: pass
     return None
 
-def get_final_result(filename):
-    """Downloads the final metadata JSON"""
+def get_final_result(blob_name):
     client = get_blob_service()
-    json_filename = filename.replace(".mp4", ".json")
+    base_name = os.path.splitext(blob_name)[0]
+    json_filename = f"{base_name}.json"
+    
     blob_client = client.get_blob_client(container=CONTAINER_OUTPUT, blob=json_filename)
     try:
-        data = blob_client.download_blob().readall()
-        return json.loads(data)
-    except:
-        return None
+        return json.loads(blob_client.download_blob().readall())
+    except: return None
 
 # --- UI LAYOUT ---
 
 st.title("🐮 CattleCounter: Aerial Livestock Analytics")
 st.markdown("Upload drone footage to perform automated cattle counting using **Computer Vision (Transformers)**.")
 
-# Sidebar for System Status
 with st.sidebar:
     st.header("System Status")
     api_status = "🔴 Offline"
     try:
-        r = requests.get(f"{API_URL}/")
-        if r.status_code == 200:
-            api_status = "🟢 Online"
-    except:
-        pass
+        if requests.get(f"{API_URL}/", timeout=1).status_code == 200: api_status = "🟢 Online"
+    except: pass
     st.metric("API Connection", api_status)
     
-    if "job_history" not in st.session_state:
-        st.session_state.job_history = []
-    
+    if "job_history" not in st.session_state: st.session_state.job_history = []
     if st.session_state.job_history:
         st.subheader("Recent Jobs")
-        df = pd.DataFrame(st.session_state.job_history)
-        st.dataframe(df, hide_index=True)
+        st.dataframe(pd.DataFrame(st.session_state.job_history), hide_index=True)
 
-# Main Area
 col1, col2 = st.columns([1, 2])
 
 with col1:
     st.subheader("1. New Mission")
     uploaded_file = st.file_uploader("Upload Drone Video (MP4)", type=["mp4", "mov"])
     
-    start_btn = st.button("🚀 Launch Analysis", type="primary", disabled=(uploaded_file is None))
+    if "uploading" not in st.session_state: st.session_state.uploading = False
+    
+    launch_btn = st.button("🚀 Launch Analysis", type="primary", disabled=(uploaded_file is None or st.session_state.uploading))
 
-    if start_btn and uploaded_file:
-        with st.spinner("Uploading video to Cloud Storage..."):
-            try:
-                files = {"file": (uploaded_file.name, uploaded_file, uploaded_file.type)}
-                response = requests.post(f"{API_URL}/submit-job", files=files)
+    if launch_btn and uploaded_file:
+        st.session_state.uploading = True
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        try:
+            status_text.text("Initiating streaming upload...")
+            
+            def update_progress(current, total):
+                percent = int((current / total) * 100)
+                progress_bar.progress(min(percent, 100))
                 
-                if response.status_code == 200:
-                    data = response.json()
-                    st.session_state.current_job = {
-                        "id": data["job_id"],
-                        "filename": data["message"].split(" ")[-1] if "filename" not in data else data["filename"],
-                        # We need the blob name generated by API (uuid + ext). 
-                        # Ideally API should return it. For now, let's assume API logic:
-                        # But wait, API generates UUID. We need that filename to poll status.
-                    }
-                    # FIX: The API needs to return the blob_name (filename) it generated!
-                    # Let's assume for this demo we modified API to return 'blob_name'.
-                    # Or we parse it from response. But better: let's update session state manually for now
-                    # We will trust the API returned 'job_id', and we know logic is job_id + ext.
-                    ext = os.path.splitext(uploaded_file.name)[1]
-                    st.session_state.current_blob_name = f"{data['job_id']}{ext}"
-                    st.success(f"Job queued! ID: {data['job_id']}")
+                # UX IMPROVEMENT: Feedback for the user during queue registration
+                if current >= total:
+                    status_text.text("⏳ Upload complete. Registering job...")
                 else:
-                    st.error(f"Error: {response.text}")
-            except Exception as e:
-                st.error(f"Connection Error: {e}")
+                    status_text.text(f"Uploading: {min(percent, 100)}% ({round(current/1024/1024, 1)} MB)")
+
+            wrapped_file = ProgressReader(uploaded_file, update_progress)
+            files = {'file': (uploaded_file.name, wrapped_file, uploaded_file.type)}
+            
+            response = requests.post(f"{API_URL}/submit-job", files=files)
+            
+            if response.status_code == 200:
+                data = response.json()
+                progress_bar.progress(100)
+                status_text.text("✅ Job successfully queued!")
+                st.session_state.current_blob_name = data.get("blob_name")
+                st.success(f"Job ID: {data['job_id']}")
+            else:
+                st.error(f"Upload Failed: {response.text}")
+        except Exception as e:
+            st.error(f"Connection Error: {e}")
+        finally:
+            st.session_state.uploading = False
+
+    if st.session_state.uploading:
+        st.info("💡 To cancel, use the 'Stop' button in the top-right corner.")
 
 with col2:
     st.subheader("2. Real-Time Monitor")
@@ -127,12 +135,10 @@ with col2:
     if "current_blob_name" in st.session_state:
         blob_name = st.session_state.current_blob_name
         
-        # UI Containers for updates
         status_box = st.empty()
-        progress_bar = st.progress(0)
+        process_bar = st.progress(0)
         metrics_box = st.container()
 
-        # Polling Loop
         completed = False
         while not completed:
             status_data = get_job_status(blob_name)
@@ -141,36 +147,36 @@ with col2:
                 progress = status_data.get("progress_percent", 0)
                 status_msg = status_data.get("status", "pending")
                 
-                # Update UI
-                progress_bar.progress(progress)
-                status_box.info(f"Status: **{status_msg.upper()}** | Progress: {progress}%")
+                process_bar.progress(progress)
+                # UX IMPROVEMENT: Show percentage explicitly
+                status_box.info(f"AI Worker Status: **{status_msg.upper()}**  {progress}%")
                 
                 if status_msg == "completed" or progress == 100:
                     completed = True
+                    # st.balloons()
                     st.success("Analysis Complete!")
                     
-                    # Fetch Final Results
                     result_json = get_final_result(blob_name)
                     if result_json:
-                        # Append to history
-                        st.session_state.job_history.append({
-                            "ID": result_json.get("job_id")[:8],
-                            "Count": result_json.get("total_count")
-                        })
+                        job_id_short = result_json.get("job_id", "N/A")[:8]
+                        if not any(d['ID'] == job_id_short for d in st.session_state.job_history):
+                            st.session_state.job_history.append({
+                                "ID": job_id_short,
+                                "Count": result_json.get("total_count")
+                            })
                         
-                        # Display Metrics
                         with metrics_box:
+                            st.divider()
                             m1, m2, m3 = st.columns(3)
                             m1.metric("Total Cows", result_json.get("total_count"))
                             m2.metric("In Frame", result_json.get("total_in"))
                             m3.metric("Out Frame", result_json.get("total_out"))
-                            
                             st.json(result_json)
             else:
-                status_box.warning("Waiting for worker to pick up the job...")
+                status_box.warning("Queued. Waiting for worker...")
+                time.sleep(2)
             
             if not completed:
-                time.sleep(2) # Poll every 2 seconds
-
+                time.sleep(2)
     else:
         st.info("Upload a video to start monitoring.")
