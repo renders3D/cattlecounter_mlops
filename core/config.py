@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # Standardized Azure Connection String Name
-    AZURE_STORAGE_CONNECTION_STRING: str = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    AZURE_STORAGE_CONNECTION_STRING: str
     
     # Storage Containers & Queues
     BLOB_CONTAINER_INPUT: str = "raw-videos"
