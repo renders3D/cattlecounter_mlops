@@ -1,0 +1,27 @@
+# Base image: Lightweight Python
+FROM python:3.9-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
+COPY requirements.txt .
+
+# OPTIMIZATION: Filter out heavy AI libraries for the API
+RUN grep -vE "torch|transformers|timm|supervision|opencv" requirements.txt > api_requirements.txt && \
+    pip install --no-cache-dir -r api_requirements.txt
+
+# Copy source code
+COPY core/ ./core/
+COPY api/ ./api/
+
+# Expose port 80 (Standard for Azure Web Apps)
+EXPOSE 80
+
+# Start command listening on port 80
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "80"]

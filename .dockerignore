@@ -1,0 +1,13 @@
+pycache
+.venv
+venv
+.env
+.git
+.vscode
+utils
+.qodo
+*.mp4
+*.json
+*.jpg
+processed-videos
+raw-videos

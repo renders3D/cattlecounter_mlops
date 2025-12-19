@@ -13,7 +13,8 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 # UNIFIED VARIABLE NAME
 AZURE_STORAGE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
-API_URL = "http://localhost:8000" 
+# FIX: Read from Env (Docker) or default to Localhost
+API_URL = os.getenv("API_URL", "http://localhost:8000")
 CONTAINER_OUTPUT = "processed-videos"
 
 st.set_page_config(page_title="CattleCounter Ops Center", page_icon="🐮", layout="wide")

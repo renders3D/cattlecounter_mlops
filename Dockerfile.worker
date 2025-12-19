@@ -1,0 +1,28 @@
+# Base image: Python Slim (Debian based)
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# FIX: Updated system dependencies for Debian Bookworm (newer python images)
+# 'libgl1-mesa-glx' is deprecated, replaced by 'libgl1'
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install ALL dependencies (including heavy AI libs)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy source code
+COPY core/ ./core/
+COPY ml_engine/ ./ml_engine/
+COPY worker/ ./worker/
+
+# OPTIMIZATION: Pre-download the DETR model into the image cache.
+RUN python -c "from transformers import DetrImageProcessor, DetrForObjectDetection; \
+    DetrImageProcessor.from_pretrained('facebook/detr-resnet-50'); \
+    DetrForObjectDetection.from_pretrained('facebook/detr-resnet-50')"
+
+# Start command
+CMD ["python", "-m", "worker.main"]
