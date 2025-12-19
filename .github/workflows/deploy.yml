@@ -30,21 +30,22 @@ jobs:
         password: ${{ secrets.REGISTRY_PASSWORD }}
 
     # 4. Build & Push API Image
+    # FIX: Context changed from ./CattleCounter_MLOps to .
     - name: 'Build and Push API Image'
       uses: docker/build-push-action@v4
       with:
-        context: ./CattleCounter_MLOps
-        file: ./CattleCounter_MLOps/Dockerfile.api
+        context: .
+        file: ./Dockerfile.api
         push: true
         tags: ${{ secrets.REGISTRY_LOGIN_SERVER }}/cattle-api:latest
 
     # 5. Build & Push Worker Image
-    # (Takes longer due to AI models)
+    # FIX: Context changed from ./CattleCounter_MLOps to .
     - name: 'Build and Push Worker Image'
       uses: docker/build-push-action@v4
       with:
-        context: ./CattleCounter_MLOps
-        file: ./CattleCounter_MLOps/Dockerfile.worker
+        context: .
+        file: ./Dockerfile.worker
         push: true
         tags: ${{ secrets.REGISTRY_LOGIN_SERVER }}/cattle-worker:latest
 
@@ -60,8 +61,8 @@ jobs:
       run: |
         az webapp config appsettings set --name ${{ secrets.AZURE_WEBAPP_NAME }} --resource-group CattleCounterRG --settings AZURE_STORAGE_CONNECTION_STRING="${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}"
 
-    # 8. Deploy Worker (Using Azure Container Instances - ACI)
-    # Since Workers are background processes, ACI is perfect for them.
+    # 8. Deploy Worker to ACI
+    # This creates/updates the container instance for the background worker
     - name: 'Deploy Worker to ACI'
       run: |
         az container create \
