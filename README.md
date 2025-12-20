@@ -1,41 +1,61 @@
-# ☁️ CattleCounter: MLOps Cloud Architecture
+# ☁️ CattleCounter: Aerial Livestock Analytics Platform
 
 ![Azure](https://img.shields.io/badge/azure-%230072C6.svg?style=for-the-badge&logo=microsoftazure&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)
-![PyTorch](https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?style=for-the-badge&logo=PyTorch&logoColor=white)
 ![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=Streamlit&logoColor=white)
 
-**CattleCounter MLOps** is a scalable, cloud-native system designed to process high-resolution aerial video footage for livestock analytics. 
+![Status](https://img.shields.io/badge/Status-Production_Ready-success)
 
-Unlike real-time APIs, this architecture implements an **Asynchronous Worker Pattern** using Azure Queues. This allows the system to handle long-running computer vision tasks (Remote Video Inference with Transformers) without blocking the user interface or timing out HTTP requests.
+**CattleCounter** is a cloud-native MLOps system designed to automate cattle counting from drone footage. It leverages **Computer Vision (Transformers)** and a distributed architecture to process high-resolution video asynchronously.
 
 ## 🏗️ System Architecture
 
-The system is decoupled into two main microservices: the **API (Producer)** and the **Worker (Consumer)**.
+The system implements an **Asynchronous Worker Pattern** to handle heavy AI workloads without blocking the user interface.
 
 ```mermaid
 graph LR
-    User[Client / Dashboard] -- POST Video --> API[FastAPI Backend]
-    API -- 1. Upload Video --> Blob[(Azure Blob Storage)]
-    API -- 2. Push Job Message --> Queue[Azure Queue Storage]
-    API -- 3. Return Job ID --> User
+    User[Dashboard] -- Stream Upload --> API[FastAPI Cloud]
+    API -- Chunks --> Blob[(Azure Blob Storage)]
+    API -- Job ID --> Queue[Azure Queue Storage]
     
-    Queue -- 4. Poll Message --> Worker[GPU Worker Service]
-    Blob -- 5. Download Video --> Worker
-    Worker -- 6. DETR Inference --> Worker
-    Worker -- 7. Upload Processed Video --> Blob[(Azure Blob Storage)]
-    Worker -- 8. Upload JSON Stats --> Blob
+    Queue -- Poll --> Worker[AI Worker Container]
+    Worker -- Download --> GPU[DETR Inference Engine]
+    Worker -- Update Status --> Blob
+    Worker -- Final JSON --> Blob
+    
+    Blob -- Read Stats --> User
 ```
 
 ## 🌟 Key Features
 
-* **Asynchronous Processing:** Decouples video upload from video processing. The API responds immediately with a job_id, while the heavy lifting happens in the background.
+* ⚡ **Streaming Ingestion:** Uploads GB-sized drone videos without RAM spikes or timeouts using chunked streaming.
 
-* **Transformer-Based Vision:** Utilizes DETR (DEtection TRansformer) for global context understanding, superior to standard CNNs for counting crowded livestock from zenithal angles.
+* 🧠 **AI Engine:** Uses DETR (DEtection TRansformer), fine-tuned for zenithal (top-down) views to overcome occlusion issues in crowded herds.
 
-* **State Management:** Uses Azure Queue Storage to manage job distribution and state (Pending -> Processing -> Completed).
+* 📊 **Observability Dashboard**: Real-time monitoring of AI processing progress, historical mission logs, and audit capabilities (video playback).
 
-* **Robust Tracking:** Implements ByteTrack for persistent object ID tracking across video frames.
+* ☁️ **Auto-Healing Cloud:** Infrastructure-as-Code logic ensures queues and containers are self-repairing.
+
+## 📂 Project Structure
+
+```text
+CattleCounter_MLOps/
+├── .github/workflows/  # CI/CD Pipeline (Build & Deploy)
+├── api/                # FastAPI Application (The Producer)
+│   └── main.py         # Endpoints definition
+├── worker/             # AI Consumer (Azure Container Instance)
+│   └── main.py         # Polling loop & processing logic
+├── core/               # Shared Cloud Configuration
+│   ├── azure_client.py # Azure SDK wrappers
+│   └── config.py       # Environment variables management
+├── ml_engine/          # Computer Vision Logic (PyTorch/Supervision)
+│   └── counter.py      # Logic for DETR + ByteTrack
+├── dashboard/          # Streamlit Ops Center (Frontend)
+├── Dockerfile.api      # Docker (Lightweight API) image for the REST API 
+├── Dockerfile.worker   # Docker (Heavy and Pre-cached Models)image for the AI Worker
+└── requirements.txt
+```
 
 ## 🛠️ Tech Stack
 
@@ -49,23 +69,51 @@ graph LR
 
 * **Containerization:** Docker, Docker Compose.
 
-## 📂 Project Structure
+## 🚀 Deployment Guide
 
-```text
-CattleCounter_MLOps/
-├── api/                # FastAPI Application (The Producer)
-│   └── main.py         # Endpoints definition
-├── worker/             # Background Service (The Consumer)
-│   └── main.py         # Polling loop & processing logic
-├── core/               # Shared Configuration
-│   ├── azure_client.py # Azure SDK wrappers
-│   └── config.py       # Environment variables management
-├── ml_engine/          # The Brain (Imported from Research)
-│   └── counter.py      # Logic for DETR + ByteTrack
-├── Dockerfile.api      # Docker image for the REST API
-├── Dockerfile.worker   # Docker image for the AI Worker
-└── requirements.txt
+1. Prerequisites
+
+    * Azure Subscription (Student or Standard).
+
+    * Azure CLI installed.
+
+    * GitHub Repository.    
+
+2. Environment Setup
+
+Create a `.env` file for local development (do not commit this):
+```bash
+AZURE_STORAGE_CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=..."
+
+API_URL="http://localhost:8000" # Or your Cloud URL
 ```
+
+3. CI/CD with GitHub Actions
+
+This project is configured to deploy automatically on push to main.
+
+1. Create an Azure Container Registry (ACR).
+
+2. Create an Azure Web App (Linux/Docker).
+
+3. Add the following secrets to GitHub:
+    
+    * `AZURE_CREDENTIALS` (Service Principal JSON)
+    
+    * `REGISTRY_LOGIN_SERVER`, `USERNAME`, `PASSWORD`
+    
+    * `AZURE_WEBAPP_NAME`
+    
+    * `AZURE_STORAGE_CONNECTION_STRING`
+
+4. Running Locally (Docker Compose)
+```bash
+docker-compose up --build
+```
+
+* Dashboard: `http://localhost:8501`
+
+* API Docs: `http://localhost:8000/docs`
 
 ## 🚀 Local Development Setup
 
@@ -118,6 +166,16 @@ python -m worker.main
   "message": "Video uploaded successfully. Processing started."
 }
 ```
+
+## 📈 Observability & Analytics
+
+The "Ops Center" dashboard provides:
+
+* **Mission Control:** Upload and track individual jobs.
+
+* **Insights:** Graphs showing herd size trends over time.
+
+* **Audit Log:** Replay processed videos with bounding box overlays to verify accuracy.
 
 ##
 *Authored by Carlos Luis Noriega - Lead AI Engineer*
