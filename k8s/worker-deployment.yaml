@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cattle-worker-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cattle-worker
+  template:
+    metadata:
+      labels:
+        app: cattle-worker
+    spec:
+      containers:
+      - name: cattle-worker
+        image: cattle-worker:latest
+        imagePullPolicy: Never
+        env:
+        - name: AZURE_STORAGE_CONNECTION_STRING
+          valueFrom:
+            secretKeyRef:
+              name: cattle-secrets
+              key: AZURE_STORAGE_CONNECTION_STRING
+        resources:
+          limits:
+            memory: "1Gi"  # El worker de IA necesita más RAM
+            cpu: "1000m"

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cattle-api-service
+spec:
+  type: LoadBalancer  # En la nube real pediría una IP pública. Minikube simula esto.
+  selector:
+    app: cattle-api
+  ports:
+    - protocol: TCP
+      port: 80      # Puerto externo (Cluster IP)
+      targetPort: 80 # Puerto del contenedor

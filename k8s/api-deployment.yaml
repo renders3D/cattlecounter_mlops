@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cattle-api-deployment
+spec:
+  replicas: 1  # Podríamos poner 10 y tendrías 10 APIs balanceadas
+  selector:
+    matchLabels:
+      app: cattle-api
+  template:
+    metadata:
+      labels:
+        app: cattle-api
+    spec:
+      containers:
+      - name: cattle-api
+        image: cattle-api:latest
+        imagePullPolicy: Never  # ¡Importante para Minikube local!
+        ports:
+        - containerPort: 80
+        env:
+        - name: AZURE_STORAGE_CONNECTION_STRING
+          valueFrom:
+            secretKeyRef:
+              name: cattle-secrets
+              key: AZURE_STORAGE_CONNECTION_STRING
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
